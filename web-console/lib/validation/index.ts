@@ -128,7 +128,14 @@ const validators: Record<string, Validator> = {
   'virtual-model-rules': (b, u) =>
     chain(required(b, u, 'virtual_model_id'), required(b, u, 'target_model_id'), numberRange(b, 'priority', { integer: true })),
 
-  'guardrail-profiles': (b, u) => required(b, u, 'name'),
+  'guardrail-profiles': (b, u) =>
+    chain(
+      required(b, u, 'name'),
+      oneOf(b, 'entity_type', ['organization', 'individual']),
+    ),
+
+  'guardrail-profile-pii-objects': (b, u) =>
+    chain(required(b, u, 'guardrail_profile_id'), required(b, u, 'pii_object_id')),
 
   'pii-objects': (b, u) =>
     chain(
@@ -194,6 +201,16 @@ const validators: Record<string, Validator> = {
     ),
 
   'role-skills': (b, u) => chain(required(b, u, 'role_id'), required(b, u, 'skill_id'), oneOf(b, 'access_level', ['use', 'manage'])),
+
+  // Added by migration 013 — Proxy Services junction tables
+  'user-proxy-endpoints': (b, u) => chain(required(b, u, 'user_id'), required(b, u, 'proxy_endpoint_id')),
+  'user-mcp-servers':     (b, u) => chain(required(b, u, 'user_id'), required(b, u, 'mcp_server_id')),
+  'user-skills':          (b, u) => chain(required(b, u, 'user_id'), required(b, u, 'skill_id')),
+  'user-guardrails':      (b, u) => chain(required(b, u, 'user_id'), required(b, u, 'guardrail_profile_id')),
+  'org-proxy-endpoints':  (b, u) => chain(required(b, u, 'org_id'),  required(b, u, 'proxy_endpoint_id')),
+  'org-mcp-servers':      (b, u) => chain(required(b, u, 'org_id'),  required(b, u, 'mcp_server_id')),
+  'org-skills':           (b, u) => chain(required(b, u, 'org_id'),  required(b, u, 'skill_id')),
+  'org-guardrails':       (b, u) => chain(required(b, u, 'org_id'),  required(b, u, 'guardrail_profile_id')),
 
   // Added by migration 003
   'proxy-settings': (b, u) => chain(required(b, u, 'org_id')),

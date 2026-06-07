@@ -116,8 +116,11 @@ export function AppHeader({ onMenu, push }: { onMenu: () => void; push: (t: Toas
           {open === 'user' && (
             <div className="ovm" style={{ right: 8, top: '100%', marginTop: 0, minWidth: 240 }} onClick={(e) => e.stopPropagation()}>
               <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{user?.name ?? 'Loading…'}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{user?.name ?? 'Loading…'}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-helper)' }}>{user?.email ?? ''}</div>
+                {user?.orgName && (
+                  <div style={{ fontSize: 12, color: 'var(--text-helper)', marginTop: 2 }}>{user.orgName}</div>
+                )}
                 <div style={{ marginTop: 6 }}>
                   <Tag color="blue" sm>Signed in</Tag>
                 </div>

@@ -13,6 +13,7 @@ export default function PiiPage() {
     { key: 'name', label: 'PII object', render: (r) => <span className="cell-strong">{r.name}</span> },
     { key: 'detection_method', label: 'Detection', render: (r) => <Tag color="blue" sm>{r.detection_method}</Tag> },
     { key: 'masking_style', label: 'Masking', render: (r) => <Tag color="purple" sm>{r.masking_style}</Tag> },
+    { key: 'pattern', label: 'Regex', render: (r) => r.pattern ? <code className="mono" style={{ fontSize: '0.75rem', opacity: 0.85 }}>{r.pattern}</code> : <span style={{ opacity: 0.35 }}>—</span> },
     { key: 'min_confidence', label: 'Min confidence', align: 'right', render: (r) => <span className="mono">{Math.round(Number(r.min_confidence) * 100)}%</span> },
     { key: 'is_active', label: 'Active', render: (r) => (r.is_active ? <Tag color="green" sm>active</Tag> : <Tag color="gray" sm>off</Tag>) },
   ];

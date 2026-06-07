@@ -38,12 +38,25 @@ func (f *fakeStore) Health(ctx context.Context) error {
 	return f.healthErr
 }
 
+// Schema returns empty column and foreign-key sets for tests.
+func (f *fakeStore) Schema(ctx context.Context) (columns []map[string]any, foreignKeys []map[string]any, err error) {
+	return nil, nil, nil
+}
+
 // List records list inputs and returns configured rows.
-func (f *fakeStore) List(ctx context.Context, resource catalog.Resource, orgID string, limit int, offset int) ([]map[string]any, error) {
+func (f *fakeStore) List(ctx context.Context, resource catalog.Resource, filters map[string]string, limit int, offset int) ([]map[string]any, error) {
 	f.lastResource = resource.Name
-	f.lastOrgID = orgID
+	f.lastOrgID = filters["org_id"]
 	f.lastLimit = limit
 	f.lastOffset = offset
+	return f.listItems, nil
+}
+
+// SearchUsers records the org scope and returns the configured rows.
+func (f *fakeStore) SearchUsers(ctx context.Context, orgID, q string, limit int) ([]map[string]any, error) {
+	f.lastResource = "users"
+	f.lastOrgID = orgID
+	f.lastLimit = limit
 	return f.listItems, nil
 }
 
@@ -119,15 +132,17 @@ func TestResourceIndexReturnsResourceNames(t *testing.T) {
 	}
 }
 
-// TestListResourcePassesQueryOptions verifies collection list routing and query parsing.
+// TestListResourcePassesQueryOptions verifies collection list routing and query
+// parsing. The users resource has an org_id column, so the org_id query value is
+// applied as a column filter.
 func TestListResourcePassesQueryOptions(t *testing.T) {
-	store := &fakeStore{listItems: []map[string]any{{"id": "org-1", "name": "Acme"}}}
+	store := &fakeStore{listItems: []map[string]any{{"id": "user-1", "name": "Acme"}}}
 	server := newTestServer(store)
 
-	response := request(server, http.MethodGet, "/api/v1/organizations?limit=2&offset=3&org_id=a111", nil)
+	response := request(server, http.MethodGet, "/api/v1/users?limit=2&offset=3&org_id=a111", nil)
 
 	assertStatus(t, response, http.StatusOK)
-	if store.lastResource != "organizations" || store.lastLimit != 2 || store.lastOffset != 3 || store.lastOrgID != "a111" {
+	if store.lastResource != "users" || store.lastLimit != 2 || store.lastOffset != 3 || store.lastOrgID != "a111" {
 		t.Fatalf("unexpected list call: resource=%s limit=%d offset=%d org=%s", store.lastResource, store.lastLimit, store.lastOffset, store.lastOrgID)
 	}
 }
@@ -191,14 +206,14 @@ func TestAllResourcesSupportList(t *testing.T) {
 			store := &fakeStore{listItems: []map[string]any{{"id": "row-1"}}}
 			server := newTestServer(store)
 
-			response := request(server, http.MethodGet, "/api/v1/"+resourceName+"?limit=7&offset=11&org_id=org-1", nil)
+			response := request(server, http.MethodGet, "/api/v1/"+resourceName+"?limit=7&offset=11", nil)
 
 			assertStatus(t, response, http.StatusOK)
 			if store.lastResource != resourceName {
 				t.Fatalf("expected resource %s, got %s", resourceName, store.lastResource)
 			}
-			if store.lastLimit != 7 || store.lastOffset != 11 || store.lastOrgID != "org-1" {
-				t.Fatalf("unexpected list options: limit=%d offset=%d org=%s", store.lastLimit, store.lastOffset, store.lastOrgID)
+			if store.lastLimit != 7 || store.lastOffset != 11 {
+				t.Fatalf("unexpected list options: limit=%d offset=%d", store.lastLimit, store.lastOffset)
 			}
 		})
 	}
@@ -301,9 +316,12 @@ func TestInvalidJSONReturnsBadRequest(t *testing.T) {
 }
 
 // newTestServer creates an API server with a quiet logger and catalog resources.
+// The route tester, executor, and reloader are nil; tests exercising those
+// endpoints pass explicit stubs.
 func newTestServer(store GatewayStore) *Server {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return New(logger, store, catalog.Resources())
+	var lv slog.LevelVar
+	return New(logger, &lv, store, nil, nil, nil, catalog.Resources())
 }
 
 // request executes an HTTP request against the test server.

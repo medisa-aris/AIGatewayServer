@@ -22,6 +22,7 @@ export const NAV: NavGroup[] = [
       { id: 'model-metrics', label: 'Model Metrics', icon: 'model' },
       { id: 'guardrail-activity', label: 'Guardrails Activity', icon: 'shield' },
       { id: 'logs', label: 'Request Logs', icon: 'list', badge: 'live' },
+      { id: 'route-logs', label: 'Route Logs', icon: 'route' },
       { id: 'dimensional', label: 'Dimensional Viewer', icon: 'layers' },
     ],
   },
@@ -31,6 +32,7 @@ export const NAV: NavGroup[] = [
       { id: 'providers', label: 'Provider Accounts', icon: 'plug' },
       { id: 'virtual-models', label: 'Virtual Models', icon: 'route' },
       { id: 'proxy', label: 'Proxy', icon: 'globe' },
+      { id: 'proxy-services', label: 'Proxy Services', icon: 'route' },
     ],
   },
   {
@@ -56,6 +58,7 @@ export const NAV: NavGroup[] = [
       { id: 'users', label: 'Users & Roles', icon: 'users' },
       { id: 'org', label: 'Organization', icon: 'flow' },
       { id: 'auth', label: 'Authentication', icon: 'lock' },
+      { id: 'erd', label: 'Database ERD', icon: 'flow' },
       { id: 'tokens', label: 'API Tokens', icon: 'key' },
       { id: 'config', label: 'Configuration', icon: 'settings' },
     ],

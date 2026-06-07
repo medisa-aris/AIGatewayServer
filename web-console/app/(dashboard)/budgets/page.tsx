@@ -4,12 +4,23 @@
 
 import { ResourceCrud } from '@/components/common/ResourceCrud';
 import { Tag, type Column } from '@/components/ui';
-import { useDefaultOrgId } from '@/lib/hooks';
+import { useDefaultOrgId, useResourceList } from '@/lib/hooks';
 import { usd } from '@/components/charts';
-import type { Budget } from '@/lib/types';
+import type { Budget, UserBudget } from '@/lib/types';
 
 export default function BudgetsPage() {
   const orgId = useDefaultOrgId();
+
+  // Fetch all user_budgets to compute actual consumption per budget
+  const { data: userBudgets } = useResourceList<UserBudget>('user-budgets', { limit: 500 });
+
+  // Sum consumed_amount per budget_id
+  const consumedByBudget = userBudgets.reduce<Map<string, number>>((acc, ub) => {
+    if (!ub.budget_id) return acc;
+    acc.set(ub.budget_id, (acc.get(ub.budget_id) ?? 0) + Number(ub.consumed_amount));
+    return acc;
+  }, new Map());
+
   const columns: Column<Budget & Record<string, unknown>>[] = [
     { key: 'name', label: 'Budget', render: (r) => <span className="cell-strong">{r.name}</span> },
     { key: 'period', label: 'Period', render: (r) => <Tag color="blue" sm>{r.period ?? '—'}</Tag> },
@@ -19,14 +30,14 @@ export default function BudgetsPage() {
       label: 'Consumed',
       render: (r) => {
         const total = Number(r.total_amount) || 0;
-        const remaining = Number(r.remaining_amount ?? total);
-        const pct = total > 0 ? Math.min(100, Math.round(((total - remaining) / total) * 100)) : 0;
+        const consumed = consumedByBudget.get(r.id) ?? 0;
+        const pct = total > 0 ? Math.min(100, Math.round((consumed / total) * 100)) : 0;
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 160 }}>
             <div className="bar-track" style={{ flex: 1 }}>
               <div className="bar-fill" style={{ width: pct + '%', background: pct > 90 ? 'var(--support-error)' : 'var(--brand)' }} />
             </div>
-            <span className="mono" style={{ fontSize: 12, color: 'var(--text-helper)' }}>{pct}%</span>
+            <span className="mono" style={{ fontSize: 12, color: 'var(--text-helper)' }}>{usd(consumed)} ({pct}%)</span>
           </div>
         );
       },

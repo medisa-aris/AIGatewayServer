@@ -1,6 +1,6 @@
 # Pangreksa AI Gateway
 
-Multi-tenant AI gateway management platform. Provides a central API server and a web-based management console for governing AI model access, budgets, guardrails, prompt registries, MCP integrations, and observability.
+Multi-tenant AI gateway management platform. Provides a central API server and a web-based management console for governing AI model access, budgets, guardrails, prompt registries, MCP integrations, proxy routing, and observability.
 
 ## Architecture
 
@@ -12,11 +12,19 @@ Browser ──(same-origin /api/*, HttpOnly pat cookie)──┐
                           • injects X-API-Key, validates writes
                                                       ▼
                        central-server  (Go REST, port 10000)
+                          • 47 generic CRUD resources
+                          • Proxy Engine (configurable ports, per-endpoint listeners)
+                          • Routing/Guardrail Pipeline (dry-run + live execution)
                                                       ▼
                        PostgreSQL 16  (localhost:5432, db: aigateway1)
+
+AI Clients ──(OpenAI / Anthropic / Ollama dialect)──▶ Proxy Engine (dynamic ports)
+                                                      ▼
+                       Routing Pipeline: identity → endpoint → MCP → skill →
+                                         PII → budget → rate → upstream provider
 ```
 
-The browser only ever talks to Next.js. The web-console's Route Handlers form a **Backend-for-Frontend (BFF)** that holds the auth token, proxies all resource calls, validates writes, runs server-side aggregation (beating the 500-row cap), and bridges SSE. The UI is a React design ported to Next.js with plain-CSS Carbon-derived tokens and hand-built SVG charts (no component/chart library).
+The browser only ever talks to Next.js. The web-console's Route Handlers form a **Backend-for-Frontend (BFF)** that holds the auth token, proxies all resource calls, validates writes, runs server-side aggregation (beating the 500-row cap), and bridges SSE. The Proxy Engine runs independently on configurable ports and routes live AI requests through the guardrail pipeline.
 
 ## Prerequisites
 
@@ -28,14 +36,47 @@ The browser only ever talks to Next.js. The web-console's Route Handlers form a 
 
 ## Quick Start
 
-### 1. Run Database Migration
+### 1. Run Database Migrations
+
+Apply all migrations in order:
 
 ```bash
-psql -h localhost -U gateway_user -d aigateway1 \
-  -f docs/migrations/001_add_rate_limits_pii_skills.sql
+# Using the migration CLI (recommended)
+cd central-server
+go run ./cmd/migrate \
+  ../docs/migrations/001_add_rate_limits_pii_skills.sql \
+  ../docs/migrations/002_add_provider_accounts.sql \
+  ../docs/migrations/003_add_proxy.sql \
+  ../docs/migrations/004_virtual_models_routing.sql \
+  ../docs/migrations/005_proxy_endpoint_virtual_model.sql \
+  ../docs/migrations/006_add_pii_objects.sql \
+  ../docs/migrations/007_seed_rate_limits.sql \
+  ../docs/migrations/008_guardrail_profiles_links.sql \
+  ../docs/migrations/009_drop_guardrail_profile_type.sql \
+  ../docs/migrations/010_seed_budgets.sql \
+  ../docs/migrations/011_seed_more_users.sql \
+  ../docs/migrations/012_rbac_open_constraints.sql \
+  ../docs/migrations/013_proxy_services.sql \
+  ../docs/migrations/014_route_logs.sql
 ```
 
+Or apply individually with `psql`:
+
+```bash
+psql -h localhost -U gateway_user -d aigateway1 -f docs/migrations/<file>.sql
+```
+
+The migration CLI uses the same `AI_GATEWAY_DB_*` environment variables as the main server.
+
 ### 2. Start Central Server
+
+**Windows (PowerShell):**
+
+```powershell
+.\start\server.ps1
+```
+
+**Manual:**
 
 ```bash
 cd central-server
@@ -54,8 +95,17 @@ Environment variables (all optional, defaults shown):
 | `AI_GATEWAY_DB_USER` | `gateway_user` | DB user |
 | `AI_GATEWAY_DB_PASSWORD` | — | DB password |
 | `AI_GATEWAY_DB_NAME` | `aigateway1` | DB name |
+| `AI_GATEWAY_DB_SSLMODE` | `disable` | SSL mode |
 
 ### 3. Start Web Console
+
+**Windows (PowerShell):**
+
+```powershell
+.\start\web.ps1
+```
+
+**Manual:**
 
 ```bash
 cd web-console
@@ -73,20 +123,25 @@ Log in on the **API key** path with a raw key whose SHA-256 matches an active `a
 
 ```
 .
-├── central-server/          Go REST API — 34 generic CRUD resources
-│   ├── cmd/server/          Entry point
+├── central-server/          Go REST API — 47 generic CRUD resources
+│   ├── cmd/
+│   │   ├── server/          Entry point (HTTP server + Proxy Engine)
+│   │   └── migrate/         CLI to apply SQL migration files
 │   └── internal/
 │       ├── catalog/         Resource ↔ table whitelist (edit here to expose new tables)
 │       ├── httpapi/         HTTP routing + middleware
 │       ├── store/           Generic DB CRUD
-│       └── ...
+│       ├── proxy/           Proxy Engine — dynamic per-port listeners (Manager + handlers)
+│       └── routing/         Routing/Guardrail Pipeline — dry-run (Service) + live (Executor)
 ├── docs/
 │   ├── api-docs.md          REST API reference
 │   ├── db-docs.md           Schema documentation
 │   ├── ai_gateway_schema.sql
 │   ├── ai_gateway_sample_data_02.sql
-│   └── migrations/          Incremental SQL migrations
-│       └── 001_add_rate_limits_pii_skills.sql
+│   └── migrations/          Incremental SQL migrations (001–014)
+├── start/
+│   ├── server.ps1           Windows: build + start central-server
+│   └── web.ps1              Windows: install deps + start web-console
 ├── web-console/             Next.js management UI
 │   └── README.md            Web-console setup guide
 ├── CLAUDE.md                Architecture decisions for AI-assisted development
@@ -107,7 +162,44 @@ PATCH  /api/v1/{resource}/{id}
 DELETE /api/v1/{resource}/{id}
 ```
 
+Special endpoints:
+
+```
+POST   /api/v1/route-request/test    Dry-run guardrail check (returns pipeline trace)
+POST   /api/v1/route-request         Live request execution through routing pipeline
+```
+
 See [docs/api-docs.md](docs/api-docs.md) for full reference.
+
+## Proxy Engine
+
+The gateway runs a built-in HTTP proxy on configurable ports. Configure it under **Proxy Services** in the web console:
+
+1. **Proxy Settings** — enable/disable the engine and set the bind address (default `127.0.0.1`).
+2. **Proxy Endpoints** — each active endpoint binds its own port and exposes an inference API in one of four dialects:
+
+| Dialect | Route |
+|---|---|
+| `openai` (default) | `POST /v1/chat/completions` |
+| `anthropic` | `POST /v1/messages` |
+| `ollama` | `POST /api/chat` |
+| `azure` | `POST /openai/deployments/{deployment}/chat/completions` |
+
+Every request is authenticated with the caller's API key (Bearer token or `x-api-key` header), then routed through the full guardrail pipeline. Results are logged to `route_logs`.
+
+## Routing / Guardrail Pipeline
+
+The pipeline runs the same stages for both dry-run tests and live requests:
+
+1. **resolve_user** — hash the API key, look up active user + org
+2. **endpoint_access** — verify the user's role grants access to the target proxy endpoint
+3. **mcp_access** — check MCP server access (if supplied)
+4. **skill_check** — detect skill references in the message, verify access
+5. **pii_scan** — scan for PII patterns; non-blocking (returns `warn`, masks on live execution)
+6. **budget_check** — verify the user has remaining budget
+7. **rate_check** — verify RPM/TPM/RPD/TPD limits
+
+The dry-run endpoint (`POST /api/v1/route-request/test`) accepts an `api_key_id` UUID so the Testing modal can test without the raw key. Live execution routes through the provider account's upstream.
 
 ## Development
 
@@ -122,9 +214,12 @@ Type-check and build web-console:
 ```bash
 cd web-console
 npx tsc --noEmit     # strict type-check
-npm run build        # production build (24 routes)
+npm run build        # production build
 ```
 
-### Starting both servers
+Apply a single migration:
 
-`.claude/launch.json` defines both processes (`central-server` on a fixed `:10000`, `web-console` on `:3000`). The web-console BFF reads `CENTRAL_SERVER_URL` (server-only) to reach the central-server.
+```bash
+cd central-server
+go run ./cmd/migrate ../docs/migrations/014_route_logs.sql
+```

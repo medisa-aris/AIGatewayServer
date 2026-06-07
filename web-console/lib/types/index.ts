@@ -163,6 +163,17 @@ export interface ProxyEndpoint {
   updated_at: string;
 }
 
+/* ── Proxy Services junction types (migration 013) ─────────────────────────── */
+
+export interface UserProxyEndpoint { id: string; user_id: string; proxy_endpoint_id: string; created_at: string; }
+export interface UserMcpServer     { id: string; user_id: string; mcp_server_id: string;       created_at: string; }
+export interface UserSkill         { id: string; user_id: string; skill_id: string;             created_at: string; }
+export interface UserGuardrail     { id: string; user_id: string; guardrail_profile_id: string; created_at: string; }
+export interface OrgProxyEndpoint  { id: string; org_id:  string; proxy_endpoint_id: string;   created_at: string; }
+export interface OrgMcpServer      { id: string; org_id:  string; mcp_server_id: string;       created_at: string; }
+export interface OrgSkill          { id: string; org_id:  string; skill_id: string;             created_at: string; }
+export interface OrgGuardrail      { id: string; org_id:  string; guardrail_profile_id: string; created_at: string; }
+
 export interface ModelVersion {
   id: string;
   model_id: string;
@@ -286,12 +297,28 @@ export interface GuardrailProfile {
   name: string;
   description: string | null;
   is_default: boolean;
+  /** 'organization' | 'individual' — kind of entity this profile is assigned to */
+  entity_type: string | null;
+  /** Polymorphic UUID: organizations.id or users.id depending on entity_type */
+  entity_id: string | null;
+  /** FK → budgets.id — at most one budget per profile */
+  budget_id: string | null;
+  /** FK → rate_limits.id — at most one rate-limit rule per profile */
+  rate_limit_id: string | null;
   content_policy: Json | null;
   pii_rules: Json | null;
   topic_filters: Json | null;
   rate_limits: Json | null;
   custom_rules: Json | null;
   is_active: boolean;
+  created_at: string;
+}
+
+/** Junction row: one PII object attached to a guardrail profile. */
+export interface GuardrailProfilePiiObject {
+  id: string;
+  guardrail_profile_id: string;
+  pii_object_id: string;
   created_at: string;
 }
 
@@ -387,6 +414,38 @@ export interface Session {
   is_active: boolean;
 }
 
+/* ----------------------------- Route-test trace ----------------------------- */
+
+/**
+ * One step in the dry-run routing/guardrail validation trace.
+ *
+ * status values mirror the Go constants:
+ *   'pass'  — the check succeeded (green in the trace UI)
+ *   'fail'  — a mandatory check failed; Allowed is set to false (red)
+ *   'warn'  — a non-blocking finding, e.g. PII that will be masked (amber)
+ *   'skip'  — the check did not apply, e.g. no endpoint supplied (grey)
+ */
+export interface RouteTestCheck {
+  step:     string;
+  status:   'pass' | 'fail' | 'warn' | 'skip';
+  message:  string;
+  details?: Record<string, unknown>;
+}
+
+/**
+ * Full report returned by POST /api/v1/route-test (and the BFF proxy at
+ * POST /api/route-test). The checks array is ordered and designed to render
+ * directly as a step-by-step trace.
+ */
+export interface RouteTestReport {
+  allowed:    boolean;
+  user_id?:   string;
+  user_name?: string;
+  org_id?:    string;
+  org_name?:  string;
+  checks:     RouteTestCheck[];
+}
+
 /* ----- Migration-001 resources ----- */
 
 export interface PiiObject {
@@ -464,6 +523,57 @@ export interface RoleGuardrail { id: string; role_id: string; guardrail_profile_
 export interface RolePromptRegistry { id: string; role_id: string; prompt_registry_id: string; access_level: string; can_fork: boolean; can_deploy: boolean; }
 export interface RoleVirtualModel { id: string; role_id: string; virtual_model_id: string; access_level: string; can_modify_routing: boolean; }
 
+/* ----------------------------- RouteRequest / RouteLogs ----------------------------- */
+
+/** One row from the route_logs table — full audit of a live RouteRequest execution. */
+export interface RouteLog {
+  id: string;
+  request_id: string;
+  user_id: string | null;
+  org_id: string | null;
+  api_key_id: string | null;
+  proxy_endpoint_id: string | null;
+  provider_account_id: string | null;
+  model_id: string | null;
+  mcp_server_id: string | null;
+  message_inquiry: string;
+  message_request: string;
+  message_output: string | null;
+  pipeline_checks: RouteTestCheck[];
+  guardrail_violation_ids: string[];
+  status: 'allowed' | 'blocked' | 'error';
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost: Numeric;
+  latency_ms: number;
+  started_at: string;
+  completed_at: string | null;
+  error_message: string | null;
+}
+
+/** Request body sent to POST /api/route-request (BFF). */
+export interface RouteRequestBody {
+  apiKey: string;
+  message: string;
+  endpointId: string;
+  mcpServerId?: string;
+}
+
+/** Response from POST /api/v1/route-request (mirrored by the BFF). */
+export interface RouteRequestResult {
+  route_log_id: string;
+  request_id: string;
+  allowed: boolean;
+  status: 'allowed' | 'blocked' | 'error';
+  output?: string;
+  checks: RouteTestCheck[];
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost: number;
+  latency_ms: number;
+  error_message?: string;
+}
+
 /* ----------------------------- Auth ----------------------------- */
 
 export interface SessionUser {
@@ -471,4 +581,5 @@ export interface SessionUser {
   orgId: string;
   name: string;
   email: string;
+  orgName?: string;
 }

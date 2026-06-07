@@ -13,7 +13,7 @@ import { Section } from '@/components/ui/screen';
 import { Icon } from '@/components/Icon';
 import { useResourceList } from '@/lib/hooks';
 import { createResource, updateResource, deleteResource, ApiError } from '@/lib/api/resources';
-import type { Organization } from '@/lib/types';
+import type { Organization, User } from '@/lib/types';
 
 interface TreeNode {
   org: Organization;
@@ -84,6 +84,7 @@ const emptyForm = { name: '', slug: '', tier: 'business', billing_email: '', par
 
 export default function OrgPage() {
   const { data: orgs, isLoading, mutate } = useResourceList<Organization>('organizations', { limit: 500 });
+  const { data: allUsers } = useResourceList<User>('users', { limit: 500 });
   const { roots, width, height } = useMemo(() => buildLayout(orgs), [orgs]);
   const nodes = useMemo(() => flatten(roots), [roots]);
 
@@ -93,6 +94,8 @@ export default function OrgPage() {
   const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
   const [panning, setPanning] = useState(false);
 
+  const [memberFilter, setMemberFilter] = useState<'active' | 'both'>('active');
+
   const [modal, setModal] = useState<null | 'add' | 'edit'>(null);
   const [form, setForm] = useState(emptyForm);
   const [editId, setEditId] = useState<string | null>(null);
@@ -100,6 +103,9 @@ export default function OrgPage() {
   const [err, setErr] = useState<{ field?: string; msg: string } | null>(null);
 
   const selected = orgs.find((o) => o.id === selId) ?? null;
+  const orgUsers = selId
+    ? allUsers.filter((u) => u.org_id === selId && (memberFilter === 'both' || u.is_active))
+    : [];
 
   const openAdd = (parentId?: string) => {
     setForm({ ...emptyForm, parent_org_id: parentId ?? '' });
@@ -225,16 +231,42 @@ export default function OrgPage() {
             <button onClick={() => setZoom((z) => Math.max(0.4, z - 0.1))}><Icon name="chevronDown" size={16} /></button>
           </div>
           {selected && (
-            <div className="org-mini" style={{ minWidth: 220 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{selected.name}</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-                <Tag color="blue" sm>{selected.tier ?? 'org'}</Tag>
-                {selected.is_active ? <Tag color="green" sm>active</Tag> : <Tag color="gray" sm>inactive</Tag>}
+            <div className="org-panel">
+              <div className="org-mini">
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{selected.name}</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                  <Tag color="blue" sm>{selected.tier ?? 'org'}</Tag>
+                  {selected.is_active ? <Tag color="green" sm>active</Tag> : <Tag color="gray" sm>inactive</Tag>}
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <Btn kind="tertiary" size="sm" icon="edit" onClick={() => openEdit(selected)}>Edit</Btn>
+                  <Btn kind="tertiary" size="sm" icon="add" onClick={() => openAdd(selected.id)}>Child</Btn>
+                  <Btn kind="danger-ghost" size="sm" icon="trash" onClick={() => remove(selected)} />
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <Btn kind="tertiary" size="sm" icon="edit" onClick={() => openEdit(selected)}>Edit</Btn>
-                <Btn kind="tertiary" size="sm" icon="add" onClick={() => openAdd(selected.id)}>Child</Btn>
-                <Btn kind="danger-ghost" size="sm" icon="trash" onClick={() => remove(selected)} />
+              <div className="org-members">
+                <div className="org-members-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>Members ({orgUsers.length})</span>
+                  <div className="org-members-toggle">
+                    <button
+                      className={memberFilter === 'active' ? 'active' : ''}
+                      onClick={() => setMemberFilter('active')}
+                    >Active</button>
+                    <button
+                      className={memberFilter === 'both' ? 'active' : ''}
+                      onClick={() => setMemberFilter('both')}
+                    >Both</button>
+                  </div>
+                </div>
+                {orgUsers.length === 0 ? (
+                  <div className="org-members-empty">No users in this org</div>
+                ) : (
+                  <div className="org-members-grid">
+                    {orgUsers.map((u) => (
+                      <div key={u.id} className="org-member-chip">{u.name}</div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

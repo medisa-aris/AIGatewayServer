@@ -33,7 +33,7 @@ import { validate } from '@/lib/validation';
 
 export interface FieldDef {
   key: string;
-  label: string;
+  label: string | ((form: Record<string, string>) => string);
   type?: 'text' | 'number' | 'select' | 'textarea' | 'toggle';
   options?: { value: string; label: string }[] | string[];
   help?: string;
@@ -45,6 +45,8 @@ export interface FieldDef {
   /** Default value when adding. */
   default?: string;
   mono?: boolean;
+  /** Custom render — replaces the standard input widget when provided. */
+  renderField?: (value: string, onChange: (v: string) => void, form: Record<string, string>) => ReactNode;
 }
 
 export interface ResourceCrudProps<T> {
@@ -66,6 +68,12 @@ export interface ResourceCrudProps<T> {
   fallback?: T[];
   /** Hide the PageHead (for embedding inside a tabbed screen). */
   embedded?: boolean;
+  /** If provided, replaces the built-in add modal. */
+  onAdd?: () => void;
+  /** If provided, replaces the built-in edit modal. */
+  onEdit?: (row: T) => void;
+  /** Extra query params forwarded to the list request (e.g. { is_active: 'true' }). */
+  queryParams?: Record<string, string | number | undefined>;
 }
 
 export function ResourceCrud<T extends { id: string }>({
@@ -83,8 +91,11 @@ export function ResourceCrud<T extends { id: string }>({
   renderExpand,
   fallback,
   embedded = false,
+  onAdd,
+  onEdit,
+  queryParams,
 }: ResourceCrudProps<T>) {
-  const { data: rows, isLoading, mutate } = useResourceList<T>(resource, { limit: 500 }, fallback);
+  const { data: rows, isLoading, mutate } = useResourceList<T>(resource, { limit: 500, ...queryParams }, fallback);
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -94,6 +105,10 @@ export function ResourceCrud<T extends { id: string }>({
   const [form, setForm] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<{ field?: string; msg: string } | null>(null);
+
+  const [deleteTarget, setDeleteTarget] = useState<T | null>(null);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const filtered = useMemo(() => {
     if (!q.trim()) return rows;
@@ -158,15 +173,24 @@ export function ResourceCrud<T extends { id: string }>({
     }
   }
 
-  async function remove(row: T) {
-    const label = (row as Record<string, unknown>).name ?? row.id;
-    if (!confirm(`${softDelete ? 'Deactivate' : 'Delete'} "${label}"?`)) return;
+  function remove(row: T) {
+    setDeleteTarget(row);
+    setDeleteErr(null);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteErr(null);
     try {
-      if (softDelete) await updateResource(resource, row.id, { is_active: false });
-      else await deleteResource(resource, row.id);
+      if (softDelete) await updateResource(resource, deleteTarget.id, { is_active: false });
+      else await deleteResource(resource, deleteTarget.id);
+      setDeleteTarget(null);
       mutate();
     } catch (e) {
-      alert((e as ApiError).message);
+      setDeleteErr((e as ApiError).message);
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -179,7 +203,7 @@ export function ResourceCrud<T extends { id: string }>({
       sortable: false,
       render: (row) => (
         <div style={{ display: 'flex', gap: 2 }}>
-          <Btn kind="ghost" size="sm" icon="edit" title="Edit" onClick={() => openEdit(row as T)} />
+          <Btn kind="ghost" size="sm" icon="edit" title="Edit" onClick={() => onEdit ? onEdit(row as T) : openEdit(row as T)} />
           <Btn kind="danger-ghost" size="sm" icon="trash" title={softDelete ? 'Deactivate' : 'Delete'} onClick={() => remove(row as T)} />
         </div>
       ),
@@ -191,10 +215,10 @@ export function ResourceCrud<T extends { id: string }>({
       {embedded ? (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '16px 32px 0' }}>
           {headerActions}
-          <Btn kind="primary" size="sm" icon="add" onClick={openAdd}>{addLabel}</Btn>
+          <Btn kind="primary" size="sm" icon="add" onClick={onAdd ?? openAdd}>{addLabel}</Btn>
         </div>
       ) : (
-        <PageHead title={title} sub={sub} actions={<>{headerActions}<Btn kind="primary" size="sm" icon="add" onClick={openAdd}>{addLabel}</Btn></>} />
+        <PageHead title={title} sub={sub} actions={<>{headerActions}<Btn kind="primary" size="sm" icon="add" onClick={onAdd ?? openAdd}>{addLabel}</Btn></>} />
       )}
       <Section style={{ paddingTop: embedded ? 12 : 20 }}>
         {searchKeys.length > 0 && (
@@ -220,6 +244,29 @@ export function ResourceCrud<T extends { id: string }>({
         </div>
       </Section>
 
+      {deleteTarget && (
+        <Modal
+          title={softDelete ? 'Deactivate' : 'Delete'}
+          label="Confirm delete"
+          onClose={() => { setDeleteTarget(null); setDeleteErr(null); }}
+          footer={
+            <>
+              <Btn kind="secondary" onClick={() => { setDeleteTarget(null); setDeleteErr(null); }}>Cancel</Btn>
+              <Btn kind="danger" onClick={confirmDelete} disabled={deleteBusy}>
+                {deleteBusy ? (softDelete ? 'Deactivating…' : 'Deleting…') : (softDelete ? 'Deactivate' : 'Delete')}
+              </Btn>
+            </>
+          }
+        >
+          {deleteErr && <div style={{ marginBottom: 12 }}><Notif kind="error" title="Error">{deleteErr}</Notif></div>}
+          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
+            {softDelete ? 'Deactivate' : 'Delete'}{' '}
+            <strong>&ldquo;{String((deleteTarget as Record<string, unknown>).name ?? deleteTarget.id)}&rdquo;</strong>?
+            {!softDelete && <><br /><span style={{ color: 'var(--text-helper)', fontSize: 13 }}>This action cannot be undone.</span></>}
+          </p>
+        </Modal>
+      )}
+
       {modal && (
         <Modal
           title={editId ? `Edit ${title.replace(/s$/, '')}` : `New ${title.replace(/s$/, '')}`}
@@ -238,9 +285,11 @@ export function ResourceCrud<T extends { id: string }>({
             const val = form[f.key] ?? '';
             const error = err?.field === f.key ? err.msg : undefined;
             const set = (v: string) => setForm((s) => ({ ...s, [f.key]: v }));
+            const custom = f.renderField?.(val, set, form);
+            if (custom === null) return null;
             return (
-              <Field key={f.key} label={f.label} help={f.help} error={error}>
-                {f.type === 'select' ? (
+              <Field key={f.key} label={typeof f.label === 'function' ? f.label(form) : f.label} help={f.help} error={error}>
+                {custom ?? (f.type === 'select' ? (
                   <Select value={val} onChange={set} options={(f.options ?? []) as never} />
                 ) : f.type === 'textarea' ? (
                   <TextArea value={val} onChange={set} placeholder={f.placeholder} mono={f.mono} rows={5} />
@@ -248,7 +297,7 @@ export function ResourceCrud<T extends { id: string }>({
                   <Toggle on={val === 'true'} onChange={(b) => set(String(b))} label={val === 'true' ? 'Enabled' : 'Disabled'} />
                 ) : (
                   <Input value={val} onChange={set} placeholder={f.placeholder} mono={f.mono} type={f.type === 'number' ? 'number' : 'text'} />
-                )}
+                ))}
               </Field>
             );
           })}

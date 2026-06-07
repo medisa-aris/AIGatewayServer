@@ -431,7 +431,7 @@ export function Modal({
 }: {
   title?: ReactNode;
   label?: ReactNode;
-  size?: 'sm' | 'lg';
+  size?: 'sm' | 'lg' | 'xl';
   onClose?: () => void;
   children?: ReactNode;
   footer?: ReactNode;

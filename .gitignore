@@ -36,8 +36,9 @@ build/
 
 # ---- Claude local-only config ----
 .claude/settings.local.json
-# Local launch config — contains real DB credentials (use launch.json.example)
+# Local launch/run config — contains real DB credentials (use launch.json.example)
 /.claude/launch.json
+/.claude/config.json
 
 # ---- Logs ----
 *.log

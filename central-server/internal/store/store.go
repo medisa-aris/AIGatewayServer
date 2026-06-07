@@ -31,15 +31,24 @@ func (s *Store) Health(ctx context.Context) error {
 	return s.db.QueryRowContext(ctx, "SELECT 1").Scan(&value)
 }
 
-// List returns rows for a resource with optional org_id filtering.
-func (s *Store) List(ctx context.Context, resource catalog.Resource, orgID string, limit int, offset int) ([]map[string]any, error) {
+// List returns rows for a resource with optional column filters.
+// filters is a map of column name → value; only columns present in the
+// resource definition are applied (unknown keys are ignored).
+func (s *Store) List(ctx context.Context, resource catalog.Resource, filters map[string]string, limit int, offset int) ([]map[string]any, error) {
 	columns := strings.Join(resource.Columns, ", ")
 	query := fmt.Sprintf("SELECT %s FROM %s", columns, resource.Table)
 	args := []any{}
+	conditions := []string{}
 
-	if hasColumn(resource, "org_id") && orgID != "" {
-		args = append(args, orgID)
-		query += fmt.Sprintf(" WHERE org_id = $%d", len(args))
+	for _, col := range resource.Columns {
+		if val, ok := filters[col]; ok && val != "" {
+			args = append(args, val)
+			conditions = append(conditions, fmt.Sprintf("%s = $%d", col, len(args)))
+		}
+	}
+
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 
 	args = append(args, limit, offset)
@@ -148,6 +157,34 @@ func (s *Store) Update(ctx context.Context, resource catalog.Resource, id string
 	return items[0], nil
 }
 
+// SearchUsers returns users whose name or email contains q (case-insensitive),
+// scoped to a single organisation. Results are ordered by name and capped at
+// limit. The % wildcard in q is escaped so callers pass plain text.
+//
+// ctx — controls deadline for the database query.
+// orgID — only users belonging to this organisation are returned.
+// q — substring to match against name and email (ILIKE %q%).
+// limit — maximum rows to return; capped by the caller to a safe value.
+func (s *Store) SearchUsers(ctx context.Context, orgID, q string, limit int) ([]map[string]any, error) {
+	// Escape literal % and _ so the caller's text is not treated as pattern chars.
+	escaped := strings.NewReplacer(`%`, `\%`, `_`, `\_`).Replace(q)
+	pattern := "%" + escaped + "%"
+
+	const cols = "id, org_id, email, name, auth_provider, external_id, last_login_at, is_active"
+	query := fmt.Sprintf(
+		"SELECT %s FROM users WHERE org_id = $1 AND (name ILIKE $2 OR email ILIKE $2) ORDER BY name LIMIT $3",
+		cols,
+	)
+
+	rows, err := s.db.QueryContext(ctx, query, orgID, pattern, limit)
+	if err != nil {
+		return nil, fmt.Errorf("store.SearchUsers: %w", err)
+	}
+	defer rows.Close()
+
+	return scanRows(rows)
+}
+
 // Delete removes one row by UUID primary key.
 func (s *Store) Delete(ctx context.Context, resource catalog.Resource, id string) error {
 	query := fmt.Sprintf("DELETE FROM %s WHERE id = $1", resource.Table)
@@ -200,6 +237,58 @@ func hasColumn(resource catalog.Resource, column string) bool {
 		}
 	}
 	return false
+}
+
+// Schema returns all public table columns and foreign-key relationships from
+// information_schema. It is used by the /api/schema endpoint to generate ERDs.
+//
+// columns — one row per column ordered by (table_name, ordinal_position).
+// foreignKeys — one row per FK column ordered by (table_name, column_name).
+func (s *Store) Schema(ctx context.Context) (columns []map[string]any, foreignKeys []map[string]any, err error) {
+	colRows, err := s.db.QueryContext(ctx, `
+		SELECT table_name, column_name, data_type, is_nullable
+		FROM information_schema.columns
+		WHERE table_schema = 'public'
+		ORDER BY table_name, ordinal_position
+	`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("store.Schema columns: %w", err)
+	}
+	defer colRows.Close()
+
+	columns, err = scanRows(colRows)
+	if err != nil {
+		return nil, nil, fmt.Errorf("store.Schema scan columns: %w", err)
+	}
+
+	fkRows, err := s.db.QueryContext(ctx, `
+		SELECT
+			tc.table_name   AS from_table,
+			kcu.column_name AS from_column,
+			ccu.table_name  AS to_table,
+			ccu.column_name AS to_column
+		FROM information_schema.table_constraints tc
+		JOIN information_schema.key_column_usage kcu
+		  ON tc.constraint_name = kcu.constraint_name
+		 AND tc.table_schema    = kcu.table_schema
+		JOIN information_schema.constraint_column_usage ccu
+		  ON ccu.constraint_name = tc.constraint_name
+		 AND ccu.table_schema    = tc.table_schema
+		WHERE tc.constraint_type = 'FOREIGN KEY'
+		  AND tc.table_schema    = 'public'
+		ORDER BY tc.table_name, kcu.column_name
+	`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("store.Schema foreign_keys: %w", err)
+	}
+	defer fkRows.Close()
+
+	foreignKeys, err = scanRows(fkRows)
+	if err != nil {
+		return nil, nil, fmt.Errorf("store.Schema scan foreign_keys: %w", err)
+	}
+
+	return columns, foreignKeys, nil
 }
 
 // normalizeValue converts nested JSON values to json.RawMessage for JSONB columns.

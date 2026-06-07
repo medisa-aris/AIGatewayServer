@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { upstreamJson } from '@/lib/api/client';
-import type { ApiKey, ItemResponse, ListResponse, SessionUser, User } from '@/lib/types';
+import type { ApiKey, ItemResponse, ListResponse, Organization, SessionUser, User } from '@/lib/types';
 
 export const COOKIE_NAME = 'pat';
 const COOKIE_MAX_AGE = 60 * 60 * 24; // 24h
@@ -61,11 +61,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // non-fatal: proceed without profile details
   }
 
+  let org: Organization | null = null;
+  try {
+    const o = await upstreamJson<ItemResponse<Organization>>(`/api/v1/organizations/${matched.org_id}`);
+    org = o.data;
+  } catch {
+    /* non-fatal */
+  }
+
   const sessionUser: SessionUser = {
     userId: matched.user_id,
     orgId: matched.org_id,
     name: user?.name ?? 'Unknown',
     email: user?.email ?? '',
+    orgName: org?.name,
   };
 
   const response = NextResponse.json(sessionUser, { status: 200 });
@@ -103,11 +112,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     } catch {
       /* non-fatal */
     }
+    let org: Organization | null = null;
+    try {
+      const o = await upstreamJson<ItemResponse<Organization>>(`/api/v1/organizations/${matched.org_id}`);
+      org = o.data;
+    } catch {
+      /* non-fatal */
+    }
     const sessionUser: SessionUser = {
       userId: matched.user_id,
       orgId: matched.org_id,
       name: user?.name ?? 'Unknown',
       email: user?.email ?? '',
+      orgName: org?.name,
     };
     return NextResponse.json({ authenticated: true, user: sessionUser });
   } catch {

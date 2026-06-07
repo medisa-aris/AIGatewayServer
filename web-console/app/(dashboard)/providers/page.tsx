@@ -760,6 +760,100 @@ function ModelFormModal({
   );
 }
 
+/* ─── TestModelModal ─────────────────────────────────────────────────────────── */
+
+function TestModelModal({
+  model, providerAccount, onClose,
+}: {
+  model: Model;
+  providerAccount: ProviderAccount;
+  onClose: () => void;
+}) {
+  const [question, setQuestion] = useState('');
+  const [answer,   setAnswer]   = useState('');
+  const [busy,     setBusy]     = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+
+  async function handleSend() {
+    if (!question.trim()) return;
+    setBusy(true);
+    setError(null);
+    setAnswer('');
+    try {
+      const res = await fetch(`/api/providers/${providerAccount.id}/test-model`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ model_id: model.model_id, prompt: question.trim() }),
+      });
+      const data = (await res.json()) as { answer: string; error?: string };
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setAnswer(data.answer);
+      }
+    } catch {
+      setError('Request failed — check that the server is reachable.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={`Test — ${model.name || model.model_id}`}
+      label={providerAccount.name || providerAccount.provider_type}
+      onClose={onClose}
+      footer={
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn kind="secondary" onClick={onClose} disabled={busy}>Close</Btn>
+          <Btn kind="primary" onClick={handleSend} disabled={busy || !question.trim()}>
+            {busy ? 'Sending…' : 'Send'}
+          </Btn>
+        </div>
+      }
+    >
+      {error && <Notif kind="error" onClose={() => setError(null)}>{error}</Notif>}
+
+      <Field
+        label="Question"
+        help={`Model: ${model.model_id}  ·  Provider: ${providerAccount.provider_type}`}
+      >
+        <textarea
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend();
+          }}
+          placeholder="Enter a prompt… (Ctrl+Enter to send)"
+          rows={4}
+          style={{
+            width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 13,
+            border: '1px solid var(--border-strong)', borderRadius: 2,
+            padding: '8px 10px', background: 'var(--field-bg, #f4f4f4)',
+            color: 'var(--text-primary)', boxSizing: 'border-box',
+          }}
+        />
+      </Field>
+
+      <Field label="Answer">
+        <div style={{
+          minHeight: 120, padding: '10px 12px',
+          border: '1px solid var(--border-subtle)', borderRadius: 2,
+          background: 'var(--layer-01, #f4f4f4)',
+          fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap',
+          color: answer ? 'var(--text-primary)' : 'var(--text-placeholder)',
+          fontFamily: busy ? 'inherit' : undefined,
+        }}>
+          {busy
+            ? <span style={{ opacity: 0.5 }}>Waiting for response…</span>
+            : answer || <span style={{ opacity: 0.5 }}>Response will appear here</span>
+          }
+        </div>
+      </Field>
+    </Modal>
+  );
+}
+
 /* ─── Main page ──────────────────────────────────────────────────────────────── */
 
 export default function ProvidersPage() {
@@ -793,6 +887,9 @@ export default function ProvidersPage() {
   // Model modal
   const [modelModal,   setModelModal]   = useState<'add' | 'edit' | null>(null);
   const [modelTarget,  setModelTarget]  = useState<Model | undefined>();
+
+  // Test model modal
+  const [testModel, setTestModel] = useState<Model | null>(null);
 
   // Models filtered by selected account
   const visibleModels = useMemo(
@@ -1017,13 +1114,22 @@ export default function ProvidersPage() {
             getKey={(r) => r.id}
             compact
             rowActions={(r) => (
-              <button
-                className="btn ghost sm btn-icon-only"
-                title="Edit model"
-                onClick={() => openEditModel(r as unknown as Model)}
-              >
-                <Icon name="edit" size={14} />
-              </button>
+              <div style={{ display: 'flex', gap: 2 }}>
+                <button
+                  className="btn ghost sm btn-icon-only"
+                  title="Test model"
+                  onClick={() => setTestModel(r as unknown as Model)}
+                >
+                  <Icon name="zap" size={14} />
+                </button>
+                <button
+                  className="btn ghost sm btn-icon-only"
+                  title="Edit model"
+                  onClick={() => openEditModel(r as unknown as Model)}
+                >
+                  <Icon name="edit" size={14} />
+                </button>
+              </div>
             )}
           />
         )}
@@ -1051,6 +1157,15 @@ export default function ProvidersPage() {
           orgId={orgId}
           onClose={() => setModelModal(null)}
           onSaved={() => reloadModels()}
+        />
+      )}
+
+      {/* ── Test model modal ── */}
+      {testModel && selectedAccount && (
+        <TestModelModal
+          model={testModel}
+          providerAccount={selectedAccount}
+          onClose={() => setTestModel(null)}
         />
       )}
     </div>

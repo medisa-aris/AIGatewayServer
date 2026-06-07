@@ -15,8 +15,9 @@ func Resources() map[string]Resource {
 		"api-keys":               resource("api-keys", "api_keys", "id", "user_id", "org_id", "key_hash", "name", "scope", "created_at", "expires_at", "last_used_at", "is_active", "permissions"),
 		"budget-consumptions":    resource("budget-consumptions", "budget_consumptions", "id", "user_budget_id", "user_id", "request_id", "amount", "currency", "usage_type", "quantity", "consumed_at", "status"),
 		"budgets":                resource("budgets", "budgets", "id", "org_id", "name", "total_amount", "remaining_amount", "currency", "period", "period_start", "period_end", "is_active", "is_shared"),
-		"guardrail-profiles":     resource("guardrail-profiles", "guardrail_profiles", "id", "org_id", "name", "description", "is_default", "content_policy", "pii_rules", "topic_filters", "rate_limits", "custom_rules", "is_active", "created_at"),
-		"guardrail-violations":   resource("guardrail-violations", "guardrail_violations", "id", "request_id", "guardrail_profile_id", "rule_type", "severity", "triggered_content_snippet", "action_taken", "triggered_at", "metadata"),
+		"guardrail-profiles":          resource("guardrail-profiles", "guardrail_profiles", "id", "org_id", "name", "description", "is_default", "entity_type", "entity_id", "budget_id", "rate_limit_id", "content_policy", "pii_rules", "topic_filters", "rate_limits", "custom_rules", "is_active", "created_at"),
+		"guardrail-profile-pii-objects": resource("guardrail-profile-pii-objects", "guardrail_profile_pii_objects", "id", "guardrail_profile_id", "pii_object_id", "created_at"),
+		"guardrail-violations":        resource("guardrail-violations", "guardrail_violations", "id", "request_id", "guardrail_profile_id", "rule_type", "severity", "triggered_content_snippet", "action_taken", "triggered_at", "metadata"),
 		"mcp-capabilities":       resource("mcp-capabilities", "mcp_capabilities", "id", "mcp_server_id", "capability_type", "config"),
 		"mcp-servers":            resource("mcp-servers", "mcp_servers", "id", "org_id", "name", "slug", "transport", "endpoint_url", "auth_config", "status", "is_active", "created_at"),
 		"mcp-tools":              resource("mcp-tools", "mcp_tools", "id", "mcp_server_id", "name", "description", "input_schema", "is_active"),
@@ -28,6 +29,7 @@ func Resources() map[string]Resource {
 		"prompt-registries":      resource("prompt-registries", "prompt_registries", "id", "org_id", "name", "slug", "description", "visibility", "category", "tags", "is_active", "created_at"),
 		"prompt-versions":        resource("prompt-versions", "prompt_versions", "id", "registry_id", "author_id", "version_number", "prompt_template", "variables", "metadata", "status", "created_at"),
 		"request-logs":           resource("request-logs", "request_logs", "id", "request_id", "user_id", "api_key_id", "model_id", "virtual_model_id", "prompt_registry_id", "mcp_server_id", "guardrail_profile_id", "matched_rule_id", "started_at", "completed_at", "method", "path", "status_code", "input_tokens", "output_tokens", "cached_tokens", "cost", "latency_ms", "request_headers", "response_headers", "error_message", "trace_id", "region"),
+		"route-logs":             resource("route-logs", "route_logs", "id", "request_id", "user_id", "org_id", "api_key_id", "proxy_endpoint_id", "provider_account_id", "model_id", "mcp_server_id", "message_inquiry", "message_request", "message_output", "pipeline_checks", "guardrail_violation_ids", "status", "prompt_tokens", "completion_tokens", "cost", "latency_ms", "started_at", "completed_at", "error_message"),
 		"role-budgets":           resource("role-budgets", "role_budgets", "id", "role_id", "budget_id", "max_budget_per_user", "max_budget_per_request", "spend_scope", "can_override"),
 		"role-guardrails":        resource("role-guardrails", "role_guardrails", "id", "role_id", "guardrail_profile_id", "is_mandatory", "can_bypass", "bypass_approval"),
 		"role-mcps":              resource("role-mcps", "role_mcps", "id", "role_id", "mcp_server_id", "access_level", "can_configure", "allowed_tools", "allowed_resources"),
@@ -57,6 +59,16 @@ func Resources() map[string]Resource {
 		"rate-limits":  resource("rate-limits", "rate_limits", "id", "org_id", "name", "scope", "scope_id", "limit_type", "limit_value", "window_seconds", "is_active", "priority", "created_at", "updated_at"),
 		"role-skills":  resource("role-skills", "role_skills", "id", "role_id", "skill_id", "access_level", "can_invoke", "can_edit", "granted_at"),
 		"skills":       resource("skills", "skills", "id", "org_id", "name", "slug", "description", "version", "frontmatter", "body", "status", "created_by", "created_at", "updated_at"),
+
+		// Added by migration 013 — Proxy Services direct user/org assignments
+		"user-proxy-endpoints": resource("user-proxy-endpoints", "user_proxy_endpoints", "id", "user_id", "proxy_endpoint_id", "created_at"),
+		"user-mcp-servers":     resource("user-mcp-servers", "user_mcp_servers", "id", "user_id", "mcp_server_id", "created_at"),
+		"user-skills":          resource("user-skills", "user_skills", "id", "user_id", "skill_id", "created_at"),
+		"user-guardrails":      resource("user-guardrails", "user_guardrails", "id", "user_id", "guardrail_profile_id", "created_at"),
+		"org-proxy-endpoints":  resource("org-proxy-endpoints", "org_proxy_endpoints", "id", "org_id", "proxy_endpoint_id", "created_at"),
+		"org-mcp-servers":      resource("org-mcp-servers", "org_mcp_servers", "id", "org_id", "mcp_server_id", "created_at"),
+		"org-skills":           resource("org-skills", "org_skills", "id", "org_id", "skill_id", "created_at"),
+		"org-guardrails":       resource("org-guardrails", "org_guardrails", "id", "org_id", "guardrail_profile_id", "created_at"),
 	}
 }
 
