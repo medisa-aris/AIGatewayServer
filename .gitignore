@@ -1,6 +1,4 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
+# ---- Go (central-server) ----
 # Binaries for programs and plugins
 *.exe
 *.exe~
@@ -17,16 +15,36 @@ coverage.*
 *.coverprofile
 profile.cov
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
 # Go workspace file
 go.work
 go.work.sum
 
-# env file
-.env
+/central-server/server
+/central-server/bin/
 
-# Editor/IDE
+# ---- Node / Next.js (web-console) ----
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# ---- Environment files (keep *.example) ----
+.env
+.env.local
+.env*.local
+
+# ---- Claude local-only config ----
+.claude/settings.local.json
+# Local launch config — contains real DB credentials (use launch.json.example)
+/.claude/launch.json
+
+# ---- Logs ----
+*.log
+npm-debug.log*
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
 # .idea/
 # .vscode/
