@@ -7,11 +7,13 @@
  * Each row has an expand toggle that reveals the full pipeline trace
  * (guardrail/skill/MCP/provider checks) and the three message stages
  * (inquiry → request → output).
+ *
+ * Polls every 5 seconds for near-real-time updates.
  */
 
-import { useState } from 'react';
-import { PageHead, DataTable, type Column } from '@/components/ui';
-import { Section } from '@/components/ui/screen';
+import { useState, useEffect } from 'react';
+import { PageHead, DataTable, Tag, Btn, type Column } from '@/components/ui';
+import { Section, StatStrip } from '@/components/ui/screen';
 import { useResourceList } from '@/lib/hooks';
 import type { RouteLog, RouteTestCheck } from '@/lib/types';
 
@@ -167,7 +169,23 @@ function RouteLogDetail({ log }: { log: RouteLog }) {
 /* ------------------------------------------------------------------ page */
 
 export default function RouteLogsPage() {
-  const { data: logs, isLoading } = useResourceList<RouteLog>('route-logs', { limit: 200 });
+  const { data: logs, isLoading, mutate } = useResourceList<RouteLog>(
+    'route-logs',
+    { limit: 200 },
+    undefined,
+    { refreshInterval: 5000 },
+  );
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!isLoading) setLastUpdated(new Date());
+  }, [logs, isLoading]);
+
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(Math.round((Date.now() - lastUpdated.getTime()) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [lastUpdated]);
 
   const columns: Column<RouteLog & Record<string, unknown>>[] = [
     {
@@ -220,12 +238,36 @@ export default function RouteLogsPage() {
     (a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
   ) as (RouteLog & Record<string, unknown>)[];
 
+  const allowed = logs.filter((l) => l.status === 'allowed').length;
+  const blocked = logs.filter((l) => l.status === 'blocked').length;
+  const errors = logs.filter((l) => l.status === 'error').length;
+
   return (
     <div>
       <PageHead
         title="Route Logs"
         sub="Audit trail for every live RouteRequest execution — pipeline checks, messages, tokens, and costs."
+        actions={
+          <>
+            <Tag color="green" sm dot pulse>Live</Tag>
+            <span style={{ fontSize: 12, color: 'var(--text-helper)' }}>
+              Updated {elapsed}s ago
+            </span>
+            <Btn kind="tertiary" size="sm" icon="reset" onClick={() => mutate()}>Refresh</Btn>
+          </>
+        }
       />
+
+      <Section style={{ paddingTop: 20 }}>
+        <StatStrip
+          stats={[
+            { label: 'Total Requests', icon: 'activity', value: String(logs.length) },
+            { label: 'Allowed', icon: 'checkmark', value: String(allowed), delta: logs.length ? `${Math.round((allowed / logs.length) * 100)}%` : undefined, dir: 'up' },
+            { label: 'Blocked', icon: 'error', value: String(blocked), delta: logs.length ? `${Math.round((blocked / logs.length) * 100)}%` : undefined, dir: blocked > 0 ? 'down' : undefined },
+            { label: 'Errors', icon: 'warning', value: String(errors) },
+          ]}
+        />
+      </Section>
 
       <Section>
         {isLoading ? (

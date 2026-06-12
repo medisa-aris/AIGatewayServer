@@ -58,19 +58,19 @@ export default function ConfigPage() {
 
       <Section title="General" style={{ paddingTop: 24 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 720 }}>
-          <Field label="System name"><Input value={str('system_name', 'Pangreksa Gateway')} onChange={(v) => set('system_name', v)} /></Field>
-          <Field label="Region"><Select value={str('region', 'us-east')} onChange={(v) => set('region', v)} options={['us-east', 'us-west', 'eu-west', 'ap-southeast']} /></Field>
-          <Field label="Gateway base URL"><Input value={str('base_url', 'https://gateway.pangreksa.io')} onChange={(v) => set('base_url', v)} mono /></Field>
-          <Field label="Deployment model"><Select value={str('deployment', 'saas')} onChange={(v) => set('deployment', v)} options={['saas', 'self-hosted', 'hybrid']} /></Field>
-        </div>
-      </Section>
-
-      <Section title="Routing & engine" style={{ paddingTop: 24 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 720 }}>
-          <Field label="Default strategy"><Select value={str('routing_strategy', 'weight-based')} onChange={(v) => set('routing_strategy', v)} options={['weight-based', 'latency-based', 'priority-based', 'sticky']} /></Field>
-          <Field label="Retries"><Input type="number" value={str('retries', '2')} onChange={(v) => set('retries', v)} /></Field>
-          <Field label="Request timeout (s)"><Input type="number" value={str('timeout_s', '60')} onChange={(v) => set('timeout_s', v)} /></Field>
-          <Field label="Per-pod concurrency"><Input type="number" value={str('concurrency', '256')} onChange={(v) => set('concurrency', v)} /></Field>
+          <Field label="Server system name"><Input value={str('system_name', 'AI Router Gateway')} onChange={(v) => set('system_name', v)} /></Field>
+          <Field label="Desktop name"><Input value={str('desktop_name', 'Pangreksa AI Desktop')} onChange={(v) => set('desktop_name', v)} /></Field>
+          <Field label="Region">
+            <Select
+              value={str('region', 'west-id')}
+              onChange={(v) => set('region', v)}
+              options={[
+                { value: 'west-id',    label: 'West Indonesia' },
+                { value: 'central-id', label: 'Central Indonesia' },
+                { value: 'east-id',    label: 'East Indonesia' },
+              ]}
+            />
+          </Field>
         </div>
       </Section>
 

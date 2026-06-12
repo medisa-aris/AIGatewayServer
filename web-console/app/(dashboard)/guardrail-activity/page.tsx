@@ -14,6 +14,14 @@ import { ChartCard, TimeRange, StatStrip, Section } from '@/components/ui/screen
 import { LineChart, BarChart, DonutChart, SankeyChart, HeatStrip, fmtNum, DV_PALETTE, type SankeyNode, type SankeyLink } from '@/components/charts';
 import { useAggregate } from '@/lib/hooks';
 import { SEED, series } from '@/lib/seed';
+import type { RouteLog } from '@/lib/types';
+
+interface GuardrailStats {
+  kpis: { total: number; blocked: number; errors: number; avgLatency: number };
+  byRule: { label: string; value: number }[];
+  recentBlocked: RouteLog[];
+  heatStrip: number[];
+}
 
 const SANKEY_NODES: SankeyNode[] = [
   { id: 'llm_in', label: 'LLM Input', layer: 0, color: '#1192e8' },
@@ -57,6 +65,11 @@ export default function GuardrailActivityPage() {
   const hourly = SEED.overview.hourly;
   const [range, setRange] = useState('7d');
   const { data: liveTriggers } = useAggregate<{ label: string; value: number }[]>('violations-by-rule');
+  const { data: gStats } = useAggregate<GuardrailStats>('guardrail-stats');
+
+  const liveKpis = gStats?.kpis;
+  const liveHeat = gStats?.heatStrip;
+  const liveRecent = gStats?.recentBlocked;
 
   const evalSeries = [
     { name: 'Evaluated', data: series(5, 14, 1950000, 140000, 9000) },
@@ -70,7 +83,9 @@ export default function GuardrailActivityPage() {
     { label: 'Blocked', value: 6600 },
   ];
   const outcomeColors = ['#1192e8', '#b28600', '#fa4d56'];
-  const triggers = liveTriggers?.length ? liveTriggers : G.filter((g) => g.triggers > 0).map((g) => ({ label: g.name, value: g.triggers }));
+  const triggers = (liveTriggers?.length ? liveTriggers : null)
+    ?? (gStats?.byRule?.length ? gStats.byRule : null)
+    ?? G.filter((g) => g.triggers > 0).map((g) => ({ label: g.name, value: g.triggers }));
   const latency = G.filter((g) => g.p95 > 0).map((g) => ({ label: g.name.split(' ')[0]!, value: g.p95 }));
 
   return (
@@ -89,11 +104,11 @@ export default function GuardrailActivityPage() {
       <Section style={{ paddingTop: 24 }}>
         <StatStrip
           stats={[
-            { label: 'Evaluated (30d)', icon: 'shield', value: '58.6M', delta: '8.4%', dir: 'up' },
+            { label: 'Evaluated (live)', icon: 'shield', value: liveKpis ? fmtNum(liveKpis.total) : '58.6M' },
             { label: 'Mutated', icon: 'edit', value: '12.2k', delta: '12%', dir: 'up' },
             { label: 'Flagged', icon: 'flag', value: '6.0k' },
-            { label: 'Blocked', icon: 'error', value: '6.6k', delta: '3.1%', dir: 'down' },
-            { label: 'Avg added latency', icon: 'time', value: '34ms' },
+            { label: 'Blocked', icon: 'error', value: liveKpis ? String(liveKpis.blocked) : '6.6k' },
+            { label: 'Avg Latency', icon: 'time', value: liveKpis ? liveKpis.avgLatency + 'ms' : '34ms' },
           ]}
         />
       </Section>
@@ -150,39 +165,53 @@ export default function GuardrailActivityPage() {
 
       <Section style={{ paddingTop: 20 }}>
         <ChartCard title="Trigger volume by hour" sub="Today · darker = more triggers" right={<Tag color="green" sm dot pulse>Live</Tag>}>
-          <HeatStrip data={hourly} cols={24} height={26} color="#6929c4" live />
+          <HeatStrip data={liveHeat ?? hourly} cols={24} height={26} color="#6929c4" live />
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: 'var(--text-helper)' }}>
             {['00:00', '06:00', '12:00', '18:00', '23:00'].map((t) => <span key={t}>{t}</span>)}
           </div>
         </ChartCard>
       </Section>
 
-      <Section title="Recent guardrail events" style={{ paddingTop: 24 }} right={<Btn kind="ghost" size="sm" iconRight="arrowRight" onClick={() => router.push('/logs')}>Open in logs</Btn>}>
+      <Section title="Recent blocked requests" style={{ paddingTop: 24 }} right={<Btn kind="ghost" size="sm" iconRight="arrowRight" onClick={() => router.push('/route-logs')}>Open in Route Logs</Btn>}>
         <div className="dt-wrap">
           <table className="dt compact">
             <thead>
               <tr>
-                <th style={{ width: 90 }}>Time</th>
-                <th>Guardrail</th>
-                <th>Hook</th>
-                <th>Action</th>
+                <th style={{ width: 140 }}>Time</th>
+                <th>Request ID</th>
+                <th>Status</th>
                 <th>Model</th>
-                <th>Caller</th>
-                <th>Detail</th>
+                <th>Latency</th>
+                <th>Pipeline check</th>
               </tr>
             </thead>
             <tbody>
-              {RECENT.map((r, i) => (
-                <tr className="row" key={i}>
-                  <td><span style={{ fontSize: 12, color: 'var(--text-helper)' }}>{r.t}</span></td>
-                  <td><span className="cell-strong">{r.g}</span></td>
-                  <td><span className="mono" style={{ fontSize: 12 }}>{r.hook}</span></td>
-                  <td><Tag color={actColor[r.act]} sm>{r.act}</Tag></td>
-                  <td><span className="mono" style={{ fontSize: 12 }}>{r.model}</span></td>
-                  <td><span className="mono" style={{ fontSize: 12 }}>{r.user}</span></td>
-                  <td><span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{r.detail}</span></td>
-                </tr>
-              ))}
+              {liveRecent && liveRecent.length > 0 ? (
+                liveRecent.map((r) => {
+                  const failedCheck = r.pipeline_checks?.find((c) => c.status === 'fail');
+                  return (
+                    <tr className="row" key={r.id}>
+                      <td><span style={{ fontSize: 12, color: 'var(--text-helper)' }}>{new Date(r.started_at).toLocaleTimeString()}</span></td>
+                      <td><span className="mono" style={{ fontSize: 11 }}>{r.request_id?.slice(0, 8) ?? r.id.slice(0, 8)}…</span></td>
+                      <td><Tag color="red" sm>{r.status}</Tag></td>
+                      <td><span className="mono" style={{ fontSize: 12 }}>{r.model_id ?? '—'}</span></td>
+                      <td><span className="mono" style={{ fontSize: 12 }}>{r.latency_ms ?? 0}ms</span></td>
+                      <td><span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{failedCheck ? `${failedCheck.step}: ${failedCheck.message}` : '—'}</span></td>
+                    </tr>
+                  );
+                })
+              ) : (
+                RECENT.map((r, i) => (
+                  <tr className="row" key={i}>
+                    <td><span style={{ fontSize: 12, color: 'var(--text-helper)' }}>{r.t}</span></td>
+                    <td><span className="mono" style={{ fontSize: 11 }}>—</span></td>
+                    <td><Tag color={actColor[r.act]} sm>{r.act}</Tag></td>
+                    <td><span className="mono" style={{ fontSize: 12 }}>{r.model}</span></td>
+                    <td><span style={{ fontSize: 12, color: 'var(--text-helper)' }}>—</span></td>
+                    <td><span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{r.detail}</span></td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

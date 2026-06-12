@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { listAll } from '@/lib/api/client';
 import { COOKIE_NAME } from '@/app/api/auth/route';
 import * as agg from '@/lib/api/aggregations';
-import type { BudgetConsumption, GuardrailViolation, RequestLog } from '@/lib/types';
+import type { BudgetConsumption, GuardrailViolation, RequestLog, RouteLog } from '@/lib/types';
 
 type Ctx = { params: Promise<{ metric: string }> };
 
@@ -59,6 +59,43 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<NextResponse> {
       case 'violations-by-rule': {
         const v = await listAll<GuardrailViolation>('guardrail-violations', { max, apiKey });
         return NextResponse.json({ data: agg.violationsByRule(v) });
+      }
+      case 'model-metrics': {
+        const logs = await listAll<RouteLog>('route-logs', { max, apiKey });
+        return NextResponse.json({
+          data: {
+            kpis: agg.routeLogKpis(logs),
+            models: agg.modelMetrics(logs, 50),
+          },
+        });
+      }
+      case 'guardrail-stats': {
+        const [logs, violations] = await Promise.all([
+          listAll<RouteLog>('route-logs', { max, apiKey }),
+          listAll<GuardrailViolation>('guardrail-violations', { max, apiKey }),
+        ]);
+        const recentBlocked = logs
+          .filter((l) => l.status === 'blocked')
+          .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())
+          .slice(0, 20);
+        return NextResponse.json({
+          data: {
+            kpis: agg.routeLogKpis(logs),
+            byRule: agg.violationsByRule(violations),
+            recentBlocked,
+            heatStrip: agg.routeLogHeatStrip(logs),
+          },
+        });
+      }
+      case 'dimensional': {
+        const logs = await listAll<RouteLog>('route-logs', { max, apiKey });
+        return NextResponse.json({
+          data: {
+            kpis: agg.routeLogKpis(logs),
+            models: agg.modelMetrics(logs, 50),
+            byUser: agg.routeLogsByUser(logs, 50),
+          },
+        });
       }
       default:
         return NextResponse.json({ error: `Unknown metric: ${metric}` }, { status: 404 });
